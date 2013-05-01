@@ -1,11 +1,12 @@
-//Create a test class - send input from keyboard to echo server
+//Test of datagran socket
+//Using 127.0.0.1 it will write to itself
 {$mode objfpc} 
-program clientTest;
+program socketTest;
 {$linklib c}
 
   
-uses cthreads,BaseUnix,UnixType,sockets,strings,
-socket,errors,sysutils,classes,ctypes,socketstream,socketclient;
+uses cthreads,BaseUnix,UnixType,sockets,
+errors,sysutils,classes,ctypes, keyboard,socketdgram;
 
 
 const
@@ -14,87 +15,136 @@ const
   IPADDR = '127.0.0.1';
   CR = #13;
   LF = #10;
-  
 
+Type
+ PThreadFunction = ^TThreadFunction;
+ TThreadFunction = function (p: pointer): LongInt;   
+ TimeOutExcept = Class(Exception); //sysutils
 
 type
-  TClientClass = class(TClientSocket)
+  TDGramClass = class(TDataGramSocket)
    private
-       // procedure doSomething(Sender: TObject);
+   // procedure doSomething(Sender: TObject);
    public
     // function EchoThread(p: pointer): PtrUInt;
-   constructor Create(APort: integer; IPAddress, IPServerAddress: String); 
-	 procedure init;
+	 constructor Create(APort: integer; IPAddress: String); 
+	 function RecvDGram: String; 
+	 function SendDGram(S: String): Integer;
 end;	
    
-  var
-  CStr, OutStr: String;
-  CLen: Integer;  
-  ASocket: TSocket;
-  Sent, Received, Bytes: Integer;
-  myClient: TClientClass;
-  MySendBuf, MyRecvBuf: PCharBuffer;
-    
-constructor TClientClass.Create(APort: integer; IPAddress, IPServerAddress: String);  
+var
+  MySocket: TDgramClass;
+  SendThreadFunction: TThreadFunction;
+  RecvThreadFunction: TThreadFunction;
+  RecvThrd, SendThrd: TThreadID;
+
+constructor TDGramClass.Create(APort: integer; IPAddress: String);  
 begin
-  inherited create(APort, IPAddress, IPServerAddress);
-  init;
+  inherited create(APort, IPAddress);
 end;									
 
-procedure TClientClass.init;
+
+function getString(var S: String):integer;
+var
+  C: char;
+  cnt: Integer;
+  k: TKeyEvent;
 begin
-  ASocket := SocketHandle;
+  S := '';
+  C := #0;
+  cnt := 0;
+  While C <> CR do
+    begin
+	  k := getKeyEvent;
+	  K:=TranslateKeyEvent(K);
+	  C := getKeyEventChar(k);
+	  write(C);
+	  if C = 'Q' then
+	    begin
+		  result := -1;
+          S :='q';
+		  exit;
+		end;
+	  S := S + C;
+	  inc(cnt);
+	end; 
+result := cnt; 
+	
+end;   
+   						
+function TDGramClass.RecvDGram: String; 
+var
+  Recvd: Integer;
+  S: String;
+ begin
+   Recvd := 0;
+   while (Recvd = 0) do 
+    begin
+	  Recvd := recvUDP(S);
+	  If Recvd > 0 then
+	    RecvDGram := S;
+	 end;
+end;
+	 
+function TDGramClass.SendDGram(S: String): Integer;
+var 
+  Sent: Integer;	
+begin 
+  Sent := 0;
+  While (Sent = 0) do
+    begin
+	  Sent := SendUDP(S);   
+	  If Sent <> 0 then
+	    SendDGram := Sent;
+	end;
+end;		
+
+
+function RecvThread(p: pointer): PtrUInt; 
+var
+  S: String;
+begin
+  while (1 <> 2) do
+    begin
+	  S := MySocket.RecvDGram;
+	  write('Received ',S);
+	  RecvThread := Length(S);
+	end;
 end;
 
-function compareBye( buf: cBuffer; len:integer): integer;
- var
-   I: Integer;
+function SendThread(p: pointer): PtrUInt;
+var
+  S: String;
+  cnt: integer;
 begin
-  compareBye := 0; 
-
-  for I := 1 to Len do
+  while (1<>2) do
     begin
-	  if (buf[I] = 'b') and ((I + 3) < len) then
-	    if ((buf[I+1] = 'y') and (buf[I+2] = 'e' )) and 
-		   ((buf[I+3] = CR) or (buf[I+3] = LF)) then
-		      begin
-		        compareBye := I;
-				exit;//break;
-			  end;	
-	end;	
-end; 
-
-
+     cnt := getString(S);
+     if S = 'q' then
+	  begin
+	   //EndThread(0);
+	   //killThread(RecvThrd);
+	    SendThrd := 0;
+		exit;
+	  end; 
+     if cnt > 0 then
+       cnt := MySocket.SendDGram(S);
+     Writeln(S);
+	 SendThread := Length(S);
+   end;	 
+end;
+   
 begin
- 
-   MyClient := TClientClass.Create(PORT_TEST, IPADDR, IPADDR);
-   MySendBuf := MyClient.SendBuf;
-   MyRecvBuf := MyClient.RecvBuf;
-   Sent := 1;
- while(Sent > 0) do
-   begin
-       readln(CStr);
-	   OutStr:='';
-	 //CStr := 'This is a string. ';
-     //Sleep(250);
-
-    CStr:=CStr+#13+#10;
-	CLen:=Length(CStr)+1;
-	StrPCopy(PChar(MySendBuf),CStr);
-    sent :=fpsend(ASocket, MySendBuf, CLen, 0); 
-	received := 0;
-            while (received < CLen) do
-			  begin
-                bytes := fprecv(ASocket, MyRecvbuf, BUFCNT, 0); 
-			    if (bytes < 0) then
-                  Writeln('Failed to receive bytes from server');
-				OutStr := OutStr + strpas(PChar(MyRecvBuf));  
-                received := received + bytes;
-			  end;
-			  writeln('Returned ',OutStr);
-              //writeln('Returned ',OutStr,' ',trunc(random*100));
-			  
-	if (sent > 0) and (compareBye(MySendBuf^,sent) > 0) then
-		    sent := 0;
-	end;		
-end.
+  InitKeyboard;
+  MySocket := TDGramClass.Create(PORT_TEST, IPADDR);
+  RecvThreadFunction :=  TThreadFunction(@RecvThread);
+  SendThreadFunction :=  TThreadFunction(@SendThread);
+  RecvThrd := BeginThread(RecvThreadFunction,nil);
+  SendThrd := BeginThread(SendThreadFunction,nil);
+  while (SendThrd<>0) do
+    begin
+	end;  
+  KillThread(RecvThrd);
+  donekeyboard; 
+  MySocket.Destroy;
+end.  
