@@ -10,7 +10,7 @@ it has fields for protocol(IPPROTO_NONE, IPPROTO_TCP or IPPROTO_UDP)
    Domain(Usually PF_INET)
    Type(SOCK_STREAM, SOCK_DGRAM,  SOCK_RAW)
 it has properties to manipulate these fields
-it has the socket fuction and the bind function
+it has the socket function and the bind function
 it has a state mechanism - needs to be developed further
 error mechanisms need to be developed further
 
